@@ -1,0 +1,640 @@
+//@version=5
+indicator("RTR 1.3.6", shorttitle="RTR 1.3.6", overlay=true, max_labels_count=500, max_lines_count=500)
+
+//=====================================================================
+// INPUTS
+//=====================================================================
+
+//---------------------------------------------------------------------
+// SIGNALS
+//---------------------------------------------------------------------
+groupSignals = "SIGNALS"
+
+showBuySell = input.bool(true, "Buy/Sell Signals", group=groupSignals)
+showTPSL = input.bool(true, "TP/SL Signals", group=groupSignals)
+
+signalLength = input.string("Mid", "Length", options=["Tiny", "Small", "Mid", "Large"], group=groupSignals)
+
+
+//---------------------------------------------------------------------
+// ALERTS
+//---------------------------------------------------------------------
+groupAlerts = "ALERTS"
+
+enableAlerts = input.bool(true, "Enable Buy/Sell Alerts", group=groupAlerts)
+
+
+//---------------------------------------------------------------------
+// FILTER
+//---------------------------------------------------------------------
+groupFilter = "FILTER"
+
+useATR = input.bool(false, "Enable ATR Volatility Filter", group=groupFilter)
+atrPeriod = input.int(14, "ATR Period", minval=1, group=groupFilter)
+atrRatioThreshold = input.float(1.0, "ATR Ratio", minval=0.1, step=0.1, group=groupFilter)
+
+
+//---------------------------------------------------------------------
+// RANGES / EMA RIBBON
+//---------------------------------------------------------------------
+groupRanges = "RANGES"
+
+ema1Length = input.int(31, "Range 1", minval=1, group=groupRanges, inline="R1")
+ema2Length = input.int(35, "", minval=1, group=groupRanges, inline="R1")
+
+ema3Length = input.int(40, "Range 2", minval=1, group=groupRanges, inline="R2")
+ema4Length = input.int(45, "", minval=1, group=groupRanges, inline="R2")
+
+ema5Length = input.int(51, "Range 3", minval=1, group=groupRanges, inline="R3")
+ema6Length = input.int(58, "", minval=1, group=groupRanges, inline="R3")
+
+
+//---------------------------------------------------------------------
+// STOP / TARGETS
+//---------------------------------------------------------------------
+groupTrade = "TRADE LEVELS"
+
+stopBufferATR = input.float(0.0, "Stop Buffer ATR", minval=0.0, step=0.1, group=groupTrade)
+
+tp1R = input.float(1.0, "TP1 R", minval=0.1, step=0.1, group=groupTrade)
+tp2R = input.float(2.0, "TP2 R", minval=0.1, step=0.1, group=groupTrade)
+tp3R = input.float(3.0, "TP3 R", minval=0.1, step=0.1, group=groupTrade)
+tp4R = input.float(4.0, "TP4 R", minval=0.1, step=0.1, group=groupTrade)
+tp5R = input.float(5.0, "TP5 R", minval=0.1, step=0.1, group=groupTrade)
+tp6R = input.float(6.0, "TP6 R", minval=0.1, step=0.1, group=groupTrade)
+tp7R = input.float(7.0, "TP7 R", minval=0.1, step=0.1, group=groupTrade)
+
+projectionBars = input.int(12, "Projection Length", minval=2, maxval=100, group=groupTrade)
+
+
+//---------------------------------------------------------------------
+// DASHBOARD
+//---------------------------------------------------------------------
+groupDashboard = "DASHBOARD"
+
+showDashboard = input.bool(true, "Show Dashboard", group=groupDashboard)
+
+dashboardPosition = input.string(
+     "Top Right",
+     "Dashboard Position",
+     options=["Top Left", "Top Right", "Bottom Left", "Bottom Right"],
+     group=groupDashboard)
+
+dashboardTextSize = input.string(
+     "Small",
+     "Dashboard Text Size",
+     options=["Tiny", "Small", "Normal", "Large"],
+     group=groupDashboard)
+
+tf1 = input.timeframe("60", "TF I", group=groupDashboard)
+tf2 = input.timeframe("240", "TF II", group=groupDashboard)
+tf3 = input.timeframe("D", "TF III", group=groupDashboard)
+tf4 = input.timeframe("W", "TF IV", group=groupDashboard)
+tf5 = input.timeframe("M", "TF V", group=groupDashboard)
+
+
+//---------------------------------------------------------------------
+// DISPLAY
+//---------------------------------------------------------------------
+groupDisplay = "DISPLAY"
+
+showRibbon = input.bool(true, "Show EMA Ribbon", group=groupDisplay)
+showEntryLine = input.bool(true, "Show Entry Line", group=groupDisplay)
+showLevelLines = input.bool(true, "Show TP/SL Lines", group=groupDisplay)
+showZone = input.bool(true, "Show Trade Zone", group=groupDisplay)
+
+
+//=====================================================================
+// HELPER FUNCTIONS
+//=====================================================================
+
+getLookback() =>
+    signalLength == "Tiny" ? 3 : signalLength == "Small" ? 5 : signalLength == "Mid" ? 8 : 12
+
+
+getTableSize() =>
+    dashboardTextSize == "Tiny" ? size.tiny : dashboardTextSize == "Small" ? size.small : dashboardTextSize == "Normal" ? size.normal : size.large
+
+
+getDashboardPosition() =>
+    dashboardPosition == "Top Left" ? position.top_left : dashboardPosition == "Bottom Left" ? position.bottom_left : dashboardPosition == "Bottom Right" ? position.bottom_right : position.top_right
+
+
+//=====================================================================
+// BASIC CALCULATIONS
+//=====================================================================
+
+lookback = getLookback()
+
+src = close
+
+ema1 = ta.ema(src, ema1Length)
+ema2 = ta.ema(src, ema2Length)
+ema3 = ta.ema(src, ema3Length)
+ema4 = ta.ema(src, ema4Length)
+ema5 = ta.ema(src, ema5Length)
+ema6 = ta.ema(src, ema6Length)
+
+
+//=====================================================================
+// TREND LOGIC
+//=====================================================================
+
+bullishTrend = ema1 > ema2 and ema2 > ema3 and ema3 > ema4 and ema4 > ema5 and ema5 > ema6
+
+bearishTrend = ema1 < ema2 and ema2 < ema3 and ema3 < ema4 and ema4 < ema5 and ema5 < ema6
+
+ribbonColor = bullishTrend ? color.lime : bearishTrend ? color.red : color.gray
+
+
+//=====================================================================
+// EMA RIBBON
+//=====================================================================
+
+// Removing price-scale display prevents the six EMA values from creating
+// the crowded tags on the right axis.
+
+plot(showRibbon ? ema1 : na, "EMA 1", color=ribbonColor, linewidth=3, display=display.all - display.price_scale)
+plot(showRibbon ? ema2 : na, "EMA 2", color=ribbonColor, linewidth=2, display=display.all - display.price_scale)
+plot(showRibbon ? ema3 : na, "EMA 3", color=ribbonColor, linewidth=2, display=display.all - display.price_scale)
+plot(showRibbon ? ema4 : na, "EMA 4", color=ribbonColor, linewidth=1, display=display.all - display.price_scale)
+plot(showRibbon ? ema5 : na, "EMA 5", color=ribbonColor, linewidth=1, display=display.all - display.price_scale)
+plot(showRibbon ? ema6 : na, "EMA 6", color=ribbonColor, linewidth=1, display=display.all - display.price_scale)
+
+
+//=====================================================================
+// ATR FILTER
+//=====================================================================
+
+atrValue = ta.atr(atrPeriod)
+
+atrBaseline = ta.sma(atrValue, atrPeriod * 3)
+
+atrRatio = atrBaseline > 0 ? atrValue / atrBaseline : 0.0
+
+atrPass = not useATR or atrRatio >= atrRatioThreshold
+
+
+//=====================================================================
+// SIGNAL GENERATION
+//=====================================================================
+
+// Signals only trigger on confirmed chart bars.
+// This prevents an intrabar EMA crossover from appearing and disappearing.
+
+bullishFlip = bullishTrend and not bullishTrend[1]
+bearishFlip = bearishTrend and not bearishTrend[1]
+
+longSignal = bullishFlip and atrPass and barstate.isconfirmed
+shortSignal = bearishFlip and atrPass and barstate.isconfirmed
+
+
+//=====================================================================
+// PERSISTENT TRADE STATE
+//=====================================================================
+
+var int tradeDirection = 0
+
+var float entryPrice = na
+var float stopPrice = na
+var float riskDistance = na
+
+var float tp1Price = na
+var float tp2Price = na
+var float tp3Price = na
+var float tp4Price = na
+var float tp5Price = na
+var float tp6Price = na
+var float tp7Price = na
+
+var int setupBar = na
+
+
+//=====================================================================
+// DRAWING OBJECTS
+//=====================================================================
+
+var line entryLine = na
+var line stopLine = na
+
+var line tp1Line = na
+var line tp2Line = na
+var line tp3Line = na
+var line tp4Line = na
+var line tp5Line = na
+var line tp6Line = na
+var line tp7Line = na
+
+var label entryLabel = na
+var label stopLabel = na
+
+var label tp1Label = na
+var label tp2Label = na
+var label tp3Label = na
+var label tp4Label = na
+var label tp5Label = na
+var label tp6Label = na
+var label tp7Label = na
+
+var box tradeBox = na
+
+
+//=====================================================================
+// STRUCTURE STOP
+//=====================================================================
+
+structureLow = ta.lowest(low, lookback)
+structureHigh = ta.highest(high, lookback)
+
+
+//=====================================================================
+// NEW LONG SETUP
+//=====================================================================
+
+if longSignal
+
+    newEntry = close
+    newStop = structureLow - atrValue * stopBufferATR
+
+    newRisk = newEntry - newStop
+
+    if newRisk > syminfo.mintick
+
+        tradeDirection := 1
+
+        entryPrice := newEntry
+        stopPrice := newStop
+        riskDistance := newRisk
+
+        // ADDITION/SUBTRACTION LOGIC.
+        // No multiplication of entry price.
+
+        tp1Price := entryPrice + riskDistance * tp1R
+        tp2Price := entryPrice + riskDistance * tp2R
+        tp3Price := entryPrice + riskDistance * tp3R
+        tp4Price := entryPrice + riskDistance * tp4R
+        tp5Price := entryPrice + riskDistance * tp5R
+        tp6Price := entryPrice + riskDistance * tp6R
+        tp7Price := entryPrice + riskDistance * tp7R
+
+        setupBar := bar_index
+
+
+//=====================================================================
+// NEW SHORT SETUP
+//=====================================================================
+
+if shortSignal
+
+    newEntry = close
+    newStop = structureHigh + atrValue * stopBufferATR
+
+    newRisk = newStop - newEntry
+
+    if newRisk > syminfo.mintick
+
+        tradeDirection := -1
+
+        entryPrice := newEntry
+        stopPrice := newStop
+        riskDistance := newRisk
+
+        // ADDITION/SUBTRACTION LOGIC.
+        // No multiplication of entry price.
+
+        tp1Price := entryPrice - riskDistance * tp1R
+        tp2Price := entryPrice - riskDistance * tp2R
+        tp3Price := entryPrice - riskDistance * tp3R
+        tp4Price := entryPrice - riskDistance * tp4R
+        tp5Price := entryPrice - riskDistance * tp5R
+        tp6Price := entryPrice - riskDistance * tp6R
+        tp7Price := entryPrice - riskDistance * tp7R
+
+        setupBar := bar_index
+
+
+//=====================================================================
+// DELETE OLD DRAWINGS WHEN A NEW SETUP ARRIVES
+//=====================================================================
+
+newSetup = longSignal or shortSignal
+
+if newSetup
+
+    if not na(entryLine)
+        line.delete(entryLine)
+
+    if not na(stopLine)
+        line.delete(stopLine)
+
+    if not na(tp1Line)
+        line.delete(tp1Line)
+
+    if not na(tp2Line)
+        line.delete(tp2Line)
+
+    if not na(tp3Line)
+        line.delete(tp3Line)
+
+    if not na(tp4Line)
+        line.delete(tp4Line)
+
+    if not na(tp5Line)
+        line.delete(tp5Line)
+
+    if not na(tp6Line)
+        line.delete(tp6Line)
+
+    if not na(tp7Line)
+        line.delete(tp7Line)
+
+    if not na(entryLabel)
+        label.delete(entryLabel)
+
+    if not na(stopLabel)
+        label.delete(stopLabel)
+
+    if not na(tp1Label)
+        label.delete(tp1Label)
+
+    if not na(tp2Label)
+        label.delete(tp2Label)
+
+    if not na(tp3Label)
+        label.delete(tp3Label)
+
+    if not na(tp4Label)
+        label.delete(tp4Label)
+
+    if not na(tp5Label)
+        label.delete(tp5Label)
+
+    if not na(tp6Label)
+        label.delete(tp6Label)
+
+    if not na(tp7Label)
+        label.delete(tp7Label)
+
+    if not na(tradeBox)
+        box.delete(tradeBox)
+
+
+//=====================================================================
+// CREATE NEW TRADE VISUALS
+//=====================================================================
+
+if newSetup and tradeDirection != 0
+
+    futureBar = bar_index + projectionBars
+
+    entryLine := line.new(bar_index, entryPrice, futureBar, entryPrice, color=color.blue, width=1, style=line.style_dotted)
+
+    stopLine := line.new(bar_index, stopPrice, futureBar, stopPrice, color=color.red, width=1, style=line.style_dotted)
+
+    tp1Line := line.new(bar_index, tp1Price, futureBar, tp1Price, color=color.green, width=1, style=line.style_dotted)
+
+    tp2Line := line.new(bar_index, tp2Price, futureBar, tp2Price, color=color.green, width=1, style=line.style_dotted)
+
+    tp3Line := line.new(bar_index, tp3Price, futureBar, tp3Price, color=color.green, width=1, style=line.style_dotted)
+
+    tp4Line := line.new(bar_index, tp4Price, futureBar, tp4Price, color=color.green, width=1, style=line.style_dotted)
+
+    tp5Line := line.new(bar_index, tp5Price, futureBar, tp5Price, color=color.green, width=1, style=line.style_dotted)
+
+    tp6Line := line.new(bar_index, tp6Price, futureBar, tp6Price, color=color.green, width=1, style=line.style_dotted)
+
+    tp7Line := line.new(bar_index, tp7Price, futureBar, tp7Price, color=color.green, width=1, style=line.style_dotted)
+
+    //===============================================================
+    // TRADE ZONE
+    //===============================================================
+
+    if showZone
+
+        zoneTop = math.max(stopPrice, tp7Price)
+        zoneBottom = math.min(stopPrice, tp7Price)
+
+        tradeBox := box.new(bar_index, zoneTop, futureBar, zoneBottom, border_color=color.new(color.green, 100), bgcolor=color.new(color.green, 90))
+
+    //===============================================================
+    // LABELS
+    //===============================================================
+
+    if showTPSL
+
+        entryLabel := label.new(futureBar, entryPrice, "Entry\n" + str.tostring(entryPrice, format.mintick), style=label.style_label_left, color=color.blue, textcolor=color.white, size=size.small)
+
+        stopLabel := label.new(futureBar, stopPrice, "Stop\n" + str.tostring(stopPrice, format.mintick), style=label.style_label_left, color=color.red, textcolor=color.white, size=size.small)
+
+        tp1Label := label.new(futureBar, tp1Price, "Target\n" + str.tostring(tp1Price, format.mintick), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
+
+        tp2Label := label.new(futureBar, tp2Price, "Target\n" + str.tostring(tp2Price, format.mintick), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
+
+        tp3Label := label.new(futureBar, tp3Price, "Target\n" + str.tostring(tp3Price, format.mintick), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
+
+        tp4Label := label.new(futureBar, tp4Price, "Target\n" + str.tostring(tp4Price, format.mintick), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
+
+        tp5Label := label.new(futureBar, tp5Price, "Target\n" + str.tostring(tp5Price, format.mintick), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
+
+        tp6Label := label.new(futureBar, tp6Price, "Target\n" + str.tostring(tp6Price, format.mintick), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
+
+        tp7Label := label.new(futureBar, tp7Price, "Target\n" + str.tostring(tp7Price, format.mintick), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
+
+
+//=====================================================================
+// KEEP SETUP VISUALLY ATTACHED TO THE RIGHT SIDE
+//=====================================================================
+
+if tradeDirection != 0
+
+    currentFutureBar = bar_index + projectionBars
+
+    if not na(entryLine)
+        line.set_x2(entryLine, currentFutureBar)
+
+    if not na(stopLine)
+        line.set_x2(stopLine, currentFutureBar)
+
+    if not na(tp1Line)
+        line.set_x2(tp1Line, currentFutureBar)
+
+    if not na(tp2Line)
+        line.set_x2(tp2Line, currentFutureBar)
+
+    if not na(tp3Line)
+        line.set_x2(tp3Line, currentFutureBar)
+
+    if not na(tp4Line)
+        line.set_x2(tp4Line, currentFutureBar)
+
+    if not na(tp5Line)
+        line.set_x2(tp5Line, currentFutureBar)
+
+    if not na(tp6Line)
+        line.set_x2(tp6Line, currentFutureBar)
+
+    if not na(tp7Line)
+        line.set_x2(tp7Line, currentFutureBar)
+
+    if not na(tradeBox)
+        box.set_right(tradeBox, currentFutureBar)
+
+    //===============================================================
+    // IMPORTANT:
+    // ALL BADGES USE THE SAME X COORDINATE.
+    //===============================================================
+
+    if not na(entryLabel)
+        label.set_x(entryLabel, currentFutureBar)
+
+    if not na(stopLabel)
+        label.set_x(stopLabel, currentFutureBar)
+
+    if not na(tp1Label)
+        label.set_x(tp1Label, currentFutureBar)
+
+    if not na(tp2Label)
+        label.set_x(tp2Label, currentFutureBar)
+
+    if not na(tp3Label)
+        label.set_x(tp3Label, currentFutureBar)
+
+    if not na(tp4Label)
+        label.set_x(tp4Label, currentFutureBar)
+
+    if not na(tp5Label)
+        label.set_x(tp5Label, currentFutureBar)
+
+    if not na(tp6Label)
+        label.set_x(tp6Label, currentFutureBar)
+
+    if not na(tp7Label)
+        label.set_x(tp7Label, currentFutureBar)
+
+
+//=====================================================================
+// BUY / SELL LABELS
+//=====================================================================
+
+if showBuySell and longSignal
+    label.new(bar_index, low, "BUY", style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+
+if showBuySell and shortSignal
+    label.new(bar_index, high, "SELL", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+
+
+//=====================================================================
+// ACTIVE TRADE PLOTS
+//
+// These plots are intentionally hidden from the price scale.
+// They are used for the fill() mechanism.
+//=====================================================================
+
+activeSL = tradeDirection != 0 and showZone ? stopPrice : na
+activeTP7 = tradeDirection != 0 and showZone ? tp7Price : na
+
+slPlot = plot(activeSL, "Trade Stop", color=color.new(color.red, 100), display=display.all - display.price_scale)
+
+tp7Plot = plot(activeTP7, "Trade Target 7", color=color.new(color.green, 100), display=display.all - display.price_scale)
+
+fill(slPlot, tp7Plot, color=tradeDirection == 1 ? color.new(color.green, 90) : color.new(color.green, 90), title="Trade Zone Fill")
+
+
+//=====================================================================
+// MULTI-TIMEFRAME CONFIRMED DATA
+//=====================================================================
+
+// IMPORTANT:
+// [1] + lookahead_on = last confirmed HTF value.
+// This avoids using the currently forming HTF candle.
+
+htf1Fast = request.security(syminfo.tickerid, tf1, ta.ema(close, 20)[1], lookahead=barmerge.lookahead_on)
+htf1Slow = request.security(syminfo.tickerid, tf1, ta.ema(close, 50)[1], lookahead=barmerge.lookahead_on)
+
+htf2Fast = request.security(syminfo.tickerid, tf2, ta.ema(close, 20)[1], lookahead=barmerge.lookahead_on)
+htf2Slow = request.security(syminfo.tickerid, tf2, ta.ema(close, 50)[1], lookahead=barmerge.lookahead_on)
+
+htf3Fast = request.security(syminfo.tickerid, tf3, ta.ema(close, 20)[1], lookahead=barmerge.lookahead_on)
+htf3Slow = request.security(syminfo.tickerid, tf3, ta.ema(close, 50)[1], lookahead=barmerge.lookahead_on)
+
+htf4Fast = request.security(syminfo.tickerid, tf4, ta.ema(close, 20)[1], lookahead=barmerge.lookahead_on)
+htf4Slow = request.security(syminfo.tickerid, tf4, ta.ema(close, 50)[1], lookahead=barmerge.lookahead_on)
+
+htf5Fast = request.security(syminfo.tickerid, tf5, ta.ema(close, 20)[1], lookahead=barmerge.lookahead_on)
+htf5Slow = request.security(syminfo.tickerid, tf5, ta.ema(close, 50)[1], lookahead=barmerge.lookahead_on)
+
+trend1 = htf1Fast > htf1Slow
+trend2 = htf2Fast > htf2Slow
+trend3 = htf3Fast > htf3Slow
+trend4 = htf4Fast > htf4Slow
+trend5 = htf5Fast > htf5Slow
+
+
+//=====================================================================
+// UNREALIZED PNL
+//=====================================================================
+
+unrealizedPnL = tradeDirection == 1 ? close - entryPrice : tradeDirection == -1 ? entryPrice - close : 0.0
+
+pnlText = tradeDirection == 0 ? "—" : unrealizedPnL >= 0 ? "+" + str.tostring(unrealizedPnL, format.mintick) : str.tostring(unrealizedPnL, format.mintick)
+
+pnlColor = tradeDirection == 0 ? color.gray : unrealizedPnL >= 0 ? color.lime : color.red
+
+
+//=====================================================================
+// DASHBOARD
+//=====================================================================
+
+var table dashboard = table.new(position.top_right, 2, 8, bgcolor=color.black, border_width=1)
+
+if barstate.islast
+
+    table.set_position(dashboard, getDashboardPosition())
+
+    tableTextSize = getTableSize()
+
+    if showDashboard
+
+        table.cell(dashboard, 0, 0, "RTR 1.3.6", text_color=color.white, text_size=tableTextSize, bgcolor=color.rgb(70, 130, 20))
+        table.cell(dashboard, 1, 0, "", text_color=color.white, text_size=tableTextSize, bgcolor=color.rgb(70, 130, 20))
+
+        table.cell(dashboard, 0, 1, tf1, text_color=color.white, text_size=tableTextSize, bgcolor=color.black)
+        table.cell(dashboard, 1, 1, trend1 ? "Bullish" : "Bearish", text_color=trend1 ? color.black : color.white, text_size=tableTextSize, bgcolor=trend1 ? color.lime : color.red)
+
+        table.cell(dashboard, 0, 2, tf2, text_color=color.white, text_size=tableTextSize, bgcolor=color.black)
+        table.cell(dashboard, 1, 2, trend2 ? "Bullish" : "Bearish", text_color=trend2 ? color.black : color.white, text_size=tableTextSize, bgcolor=trend2 ? color.lime : color.red)
+
+        table.cell(dashboard, 0, 3, tf3, text_color=color.white, text_size=tableTextSize, bgcolor=color.black)
+        table.cell(dashboard, 1, 3, trend3 ? "Bullish" : "Bearish", text_color=trend3 ? color.black : color.white, text_size=tableTextSize, bgcolor=trend3 ? color.lime : color.red)
+
+        table.cell(dashboard, 0, 4, tf4, text_color=color.white, text_size=tableTextSize, bgcolor=color.black)
+        table.cell(dashboard, 1, 4, trend4 ? "Bullish" : "Bearish", text_color=trend4 ? color.black : color.white, text_size=tableTextSize, bgcolor=trend4 ? color.lime : color.red)
+
+        table.cell(dashboard, 0, 5, tf5, text_color=color.white, text_size=tableTextSize, bgcolor=color.black)
+        table.cell(dashboard, 1, 5, trend5 ? "Bullish" : "Bearish", text_color=trend5 ? color.black : color.white, text_size=tableTextSize, bgcolor=trend5 ? color.lime : color.red)
+
+        table.cell(dashboard, 0, 6, "Unrealized PnL", text_color=color.white, text_size=tableTextSize, bgcolor=color.rgb(70, 130, 20))
+        table.cell(dashboard, 1, 6, pnlText, text_color=pnlColor, text_size=tableTextSize, bgcolor=color.black)
+
+        atrStatus = not useATR ? "OFF" : atrPass ? "PASS" : "BLOCK"
+        atrStatusColor = not useATR ? color.gray : atrPass ? color.lime : color.red
+
+        table.cell(dashboard, 0, 7, "ATR Filter", text_color=color.white, text_size=tableTextSize, bgcolor=color.black)
+        table.cell(dashboard, 1, 7, atrStatus, text_color=not useATR ? color.white : color.black, text_size=tableTextSize, bgcolor=atrStatusColor)
+
+    else
+
+        table.clear(dashboard, 0, 0, 1, 7)
+
+
+//=====================================================================
+// ALERTS
+//=====================================================================
+
+alertcondition(enableAlerts and longSignal, title="DTC Buy Signal", message="DTC 1.3.6 BUY — {{ticker}} — {{close}}")
+
+alertcondition(enableAlerts and shortSignal, title="DTC Sell Signal", message="DTC 1.3.6 SELL — {{ticker}} — {{close}}")
+
+alertcondition(enableAlerts and longSignal, title="DTC Long Setup", message="DTC Long Setup: {{ticker}} @ {{close}}")
+
+alertcondition(enableAlerts and shortSignal, title="DTC Short Setup", message="DTC Short Setup: {{ticker}} @ {{close}}")
