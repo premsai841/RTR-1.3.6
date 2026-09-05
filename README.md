@@ -8,7 +8,7 @@ A comprehensive TradingView Pine Script (v5) indicator designed for trend-follow
 *   **Dynamic Trade Zones:** Automatically calculates and plots Entry, Stop Loss (based on structure highs/lows + ATR buffer), and up to 7 Take Profit (TP) targets.
 *   **ATR Volatility Filter:** Optional toggle to ensure trades are only taken during periods of sufficient market volatility.
 *   **Multi-Timeframe Dashboard:** Real-time on-chart display monitoring trend alignments across 5 customizable timeframes, plus active unrealized PnL.
-*   **DTC Alerts:** Built-in `alertcondition` triggers for automated DTC Buy/Sell signals and trade setups.
+*   **RTR Alerts:** Built-in `alertcondition` triggers for automated RTR Buy/Sell signals and trade setups.
 
 ## Installation
 
