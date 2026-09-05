@@ -631,10 +631,10 @@ if barstate.islast
 // ALERTS
 //=====================================================================
 
-alertcondition(enableAlerts and longSignal, title="DTC Buy Signal", message="DTC 1.3.6 BUY — {{ticker}} — {{close}}")
+alertcondition(enableAlerts and longSignal, title="RTR Buy Signal", message="RTR 1.3.6 BUY — {{ticker}} — {{close}}")
 
-alertcondition(enableAlerts and shortSignal, title="DTC Sell Signal", message="DTC 1.3.6 SELL — {{ticker}} — {{close}}")
+alertcondition(enableAlerts and shortSignal, title="RTR Sell Signal", message="RTR 1.3.6 SELL — {{ticker}} — {{close}}")
 
-alertcondition(enableAlerts and longSignal, title="DTC Long Setup", message="DTC Long Setup: {{ticker}} @ {{close}}")
+alertcondition(enableAlerts and longSignal, title="RTR Long Setup", message="RTR Long Setup: {{ticker}} @ {{close}}")
 
-alertcondition(enableAlerts and shortSignal, title="DTC Short Setup", message="DTC Short Setup: {{ticker}} @ {{close}}")
+alertcondition(enableAlerts and shortSignal, title="RTR Short Setup", message="RTR Short Setup: {{ticker}} @ {{close}}")
